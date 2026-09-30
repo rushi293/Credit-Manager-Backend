@@ -14,6 +14,15 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
 
+// Root test API
+app.get('/', (req, res) => {
+  res.status(200).json({ 
+    success: true, 
+    message: 'Credit Manager Backend is running perfectly on Vercel!',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Mount API routes
 app.use('/api', apiRoutes);
 
