@@ -7,6 +7,7 @@ const router = Router();
 // Registration is disabled to enforce single-user login
 // router.post('/register', register);
 router.post('/login', login);
+
 router.get('/me', requireAuth, getMe);
 router.put('/credentials', requireAuth, updateCredentials);
 router.post('/staff', requireAuth, createStaffUser);
