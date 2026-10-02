@@ -7,6 +7,7 @@ import attachmentRoutes from './attachment.routes';
 import authRoutes from './auth.routes';
 import metricsRoutes from './metrics.routes';
 import settingsRoutes from './settings.routes';
+import adminRoutes from './admin.routes';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/attachments', attachmentRoutes);
 router.use('/metrics', metricsRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

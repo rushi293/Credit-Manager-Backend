@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -45,8 +45,15 @@ export const register = async (req: Request, res: Response) => {
       return { user, business };
     });
 
+    const session = await prisma.loginSession.create({
+      data: {
+        userId: result.user.id,
+        businessId: result.business.id
+      }
+    });
+
     const token = jwt.sign(
-      { userId: result.user.id, businessId: result.business.id },
+      { userId: result.user.id, businessId: result.business.id, sessionId: session.id },
       JWT_SECRET,
       { expiresIn: '18h' }
     );
@@ -85,8 +92,15 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
 
+    const session = await prisma.loginSession.create({
+      data: {
+        userId: user.id,
+        businessId: user.businessId
+      }
+    });
+
     const token = jwt.sign(
-      { userId: user.id, businessId: user.businessId },
+      { userId: user.id, businessId: user.businessId, sessionId: session.id },
       JWT_SECRET,
       { expiresIn: '18h' }
     );

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../utils/db';
 
@@ -18,7 +18,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
       return res.status(401).json({ success: false, error: 'Unauthorized: Missing or invalid token' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; businessId: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; businessId: string; sessionId?: string };
 
     // Optionally verify user still exists and is active
     const user = await prisma.user.findUnique({
@@ -27,6 +27,25 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 
     if (!user) {
       return res.status(401).json({ success: false, error: 'Unauthorized: Invalid user' });
+    }
+
+    if (decoded.sessionId) {
+      const session = await prisma.loginSession.findUnique({
+        where: { id: decoded.sessionId }
+      });
+      if (!session || !session.isValid || session.revokedAt) {
+        return res.status(401).json({ success: false, error: 'Unauthorized: Session revoked' });
+      }
+      
+      // Update lastActivityAt occasionally (e.g. random 10% chance to reduce DB writes)
+      if (Math.random() < 0.1) {
+        await prisma.loginSession.update({
+          where: { id: session.id },
+          data: { lastActivityAt: new Date() }
+        }).catch(() => {});
+      }
+      
+      req.sessionId = decoded.sessionId;
     }
 
     req.userId = decoded.userId;
