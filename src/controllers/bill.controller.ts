@@ -275,12 +275,6 @@ export const deleteBill = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Bill not found' });
     }
 
-    if (!bill.isArchived) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Only archived bills can be permanently deleted. Please archive it first.' 
-      });
-    }
 
     // Delete attached files from Cloudinary
     for (const attachment of bill.attachments) {
@@ -311,7 +305,7 @@ export const deleteBill = async (req: Request, res: Response) => {
       });
     });
 
-    res.json({ success: true, message: 'Archived bill deleted successfully' });
+    res.json({ success: true, message: 'Bill deleted successfully' });
   } catch (error: any) {
     console.error('Delete bill error:', error);
     res.status(500).json({ success: false, error: error.message });
