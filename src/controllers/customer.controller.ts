@@ -5,31 +5,28 @@ import prisma from '../utils/db';
 import { broadcastEvent } from '../services/events.service';
 import { createCustomerSchema } from '../schemas';
 import { calculateCustomerBalance } from '../services/finance.service';
+import { Decimal } from '@prisma/client/runtime/library';
 import cloudinary from '../utils/cloudinary';
 
 export const getCustomers = async (req: Request, res: Response) => {
   try {
     const businessId = req.businessId!;
-    const customers = await prisma.customer.findMany({
-      where: { businessId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        bills: { select: { totalAmount: true } },
-        payments: { select: { amount: true } }
-      }
-    });
+    const rawCustomers: any[] = await prisma.$queryRaw`
+      SELECT 
+        c.id, c.name, c.phone, c."alternatePhone", c.address, c.notes, c."createdAt",
+        COALESCE((SELECT SUM("totalAmount") FROM "CreditBill" WHERE "customerId" = c.id AND "businessId" = c."businessId"), 0) as "totalCredit",
+        COALESCE((SELECT SUM("amount") FROM "Payment" WHERE "customerId" = c.id AND "businessId" = c."businessId"), 0) as "totalPaid"
+      FROM "Customer" c
+      WHERE c."businessId" = ${businessId}
+      ORDER BY c."createdAt" DESC
+    `;
 
-    // Calculate balances for each customer
-    const customersWithBalances = customers.map(customer => {
-      const { outstandingBalance, totalCredit, totalPaid } = calculateCustomerBalance(
-        customer.bills,
-        customer.payments
-      );
-      
-      const { bills, payments, ...customerData } = customer;
-      
+    const customersWithBalances = rawCustomers.map(c => {
+      const totalCredit = new Decimal(c.totalCredit || 0);
+      const totalPaid = new Decimal(c.totalPaid || 0);
+      const outstandingBalance = totalCredit.minus(totalPaid);
       return {
-        ...customerData,
+        ...c,
         totalCredit,
         totalPaid,
         outstandingBalance

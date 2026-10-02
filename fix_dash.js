@@ -1,13 +1,9 @@
-import { Request, Response } from 'express';
-import prisma from '../utils/db';
-import { calculateCustomerBalance, calculateBillFinances, BillStatus } from '../services/finance.service';
-import { Decimal } from '@prisma/client/runtime/library';
+import fs from 'fs';
+const path = './src/controllers/dashboard.controller.ts';
+let content = fs.readFileSync(path, 'utf8');
 
-export const getDashboardData = async (req: Request, res: Response) => {
-  try {
-    const businessId = req.businessId!;
-
-    
+// Replace the sequential queries with Promise.all
+content = content.replace(/\/\/ 1\. Total Customers[\s\S]*?(?=res\.json\(\{)/, `
     const { date } = req.query;
     const dateFilter = date ? {
       billDate: {
@@ -68,21 +64,7 @@ export const getDashboardData = async (req: Request, res: Response) => {
       return { ...billData, totalPaid, remainingAmount, status };
     });
 
-    res.json({
-      success: true,
-      data: {
-        metrics: {
-          totalCustomers,
-          totalOutstandingCredit,
-          unpaidBillsCount,
-          partiallyPaidBillsCount,
-          overdueAmount
-        },
-        recentBills: recentBillsWithFinances,
-        recentPayments
-      }
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-};
+    `);
+
+fs.writeFileSync(path, content, 'utf8');
+console.log("Dashboard refactored!");
