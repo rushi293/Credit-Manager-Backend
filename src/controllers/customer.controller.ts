@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 import { createCustomerSchema } from '../schemas';
 import { calculateCustomerBalance } from '../services/finance.service';
 import cloudinary from '../utils/cloudinary';
@@ -50,6 +51,7 @@ export const createCustomer = async (req: Request, res: Response) => {
       data: parsedData,
     });
 
+    broadcastEvent(req.businessId!, 'CUSTOMER_CREATED', { customerId: customer.id });
     res.status(201).json({ success: true, data: customer });
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -135,7 +137,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     const businessId = req.businessId!;
     const { id } = req.params;
 
-    // ── 1. Verify customer exists and belongs to this business (IDOR protection) ──
+    // â”€â”€ 1. Verify customer exists and belongs to this business (IDOR protection) â”€â”€
     const customer = await prisma.customer.findFirst({
       where: { id, businessId },
       include: {
@@ -154,7 +156,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Customer not found' });
     }
 
-    // ── 1b. Verify Outstanding Balance ──
+    // â”€â”€ 1b. Verify Outstanding Balance â”€â”€
     const { outstandingBalance } = calculateCustomerBalance(customer.bills, customer.payments);
     if (outstandingBalance.gt(0)) {
       return res.status(400).json({
@@ -164,7 +166,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
       });
     }
 
-    // ── 2. Collect attachment file paths BEFORE the transaction ──────────────
+    // â”€â”€ 2. Collect attachment file paths BEFORE the transaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const filesToDelete: string[] = [];
     for (const bill of customer.bills) {
       for (const attachment of bill.attachments) {
@@ -174,7 +176,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 
     const billIds = customer.bills.map(b => b.id);
 
-    // ── 3. Delete files from Cloudinary ────
+    // â”€â”€ 3. Delete files from Cloudinary â”€â”€â”€â”€
     for (const url of filesToDelete) {
       try {
         if (url.startsWith('http')) {
@@ -187,12 +189,12 @@ export const deleteCustomer = async (req: Request, res: Response) => {
           await cloudinary.uploader.destroy(publicId);
         }
       } catch (fileErr) {
-        // Log but do not abort — the DB record cleanup must still complete
+        // Log but do not abort â€” the DB record cleanup must still complete
         console.error('Warning: could not delete attachment from Cloudinary:', url, fileErr);
       }
     }
 
-    // ── 4. Atomic transaction: delete all customer data in FK-safe order ─────
+    // â”€â”€ 4. Atomic transaction: delete all customer data in FK-safe order â”€â”€â”€â”€â”€
     await prisma.$transaction(async (tx) => {
       // a. BillAttachments (Cascade from bill, but explicit is safer)
       if (billIds.length > 0) {

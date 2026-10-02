@@ -1,8 +1,9 @@
-﻿import { Request, Response } from 'express';
+import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development-only';
 
@@ -175,6 +176,7 @@ export const createStaffUser = async (req: Request, res: Response) => {
       }
     });
 
+    if (adminUser.businessId) broadcastEvent(adminUser.businessId, 'USER_CREATED', { userId: newUser.id });
     res.status(201).json({ success: true, message: 'Non-Admin user created successfully' });
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -223,6 +225,7 @@ export const updateCredentials = async (req: Request, res: Response) => {
       data: dataToUpdate
     });
 
+    if (adminUser.businessId) broadcastEvent(adminUser.businessId, 'USER_UPDATED', { userId: adminUser.id });
     res.json({ success: true, message: 'Credentials updated successfully' });
   } catch (error: any) {
     if (error.name === 'ZodError') {

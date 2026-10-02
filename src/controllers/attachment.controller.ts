@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 import cloudinary from '../utils/cloudinary';
 
 export const uploadAttachment = async (req: Request, res: Response) => {
@@ -46,6 +47,7 @@ export const uploadAttachment = async (req: Request, res: Response) => {
       }
     });
 
+    broadcastEvent(req.businessId!, 'CREDIT_BILL_UPDATED', { billId });
     res.status(201).json({ success: true, data: attachment });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Failed to upload image to Cloudinary. Please check configuration.' });
@@ -119,6 +121,7 @@ export const deleteAttachment = async (req: Request, res: Response) => {
       }
     }
 
+    broadcastEvent(req.businessId!, 'CREDIT_BILL_UPDATED', { billId: attachment.creditBillId });
     res.json({ success: true, data: { deleted: true } });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 
 const requireAdmin = (req: Request, res: Response) => {
   if (!req.user || req.user.role !== 'ADMIN') {
@@ -15,8 +16,26 @@ export const getLoginSessions = async (req: Request, res: Response) => {
   try {
     if (!requireAdmin(req, res)) return;
 
+    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000);
+    const twentySixHoursAgo = new Date(Date.now() - 26 * 60 * 60 * 1000);
+
     const sessions = await prisma.loginSession.findMany({
-      where: { businessId: req.user!.businessId! },
+      where: { 
+        businessId: req.user!.businessId!,
+        OR: [
+          {
+            revokedAt: null,
+            loginAt: {
+              gte: twentySixHoursAgo
+            }
+          },
+          {
+            revokedAt: {
+              gte: eightHoursAgo
+            }
+          }
+        ]
+      },
       include: {
         user: {
           select: { email: true, role: true }
@@ -57,6 +76,7 @@ export const logoutSession = async (req: Request, res: Response) => {
       }
     });
 
+    broadcastEvent(req.user!.businessId!, 'USER_LOGOUT', { sessionId: id });
     res.json({ success: true, message: 'Session revoked successfully' });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -115,6 +135,7 @@ export const updateNonAdmin = async (req: Request, res: Response) => {
       data: dataToUpdate
     });
 
+    broadcastEvent(req.user!.businessId!, 'USER_UPDATED', { userId: id });
     res.json({ success: true, message: 'User updated successfully' });
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -139,6 +160,7 @@ export const deleteNonAdmin = async (req: Request, res: Response) => {
       where: { id }
     });
 
+    broadcastEvent(req.user!.businessId!, 'USER_DELETED', { userId: id });
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

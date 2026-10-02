@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 
 export const getMetricsByDateRange = async (req: Request, res: Response) => {
   try {
@@ -61,6 +62,7 @@ export const upsertMetric = async (req: Request, res: Response) => {
       });
     }
 
+    broadcastEvent(req.businessId!, 'METRICS_UPDATED');
     res.json({ success: true, data: metric });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

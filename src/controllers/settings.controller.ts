@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 
 const settingsSchema = z.object({
   name: z.string().min(1, 'Business name is required').optional(),

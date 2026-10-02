@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 import { processPaymentSafely } from '../services/payment.service';
 
 export const getPayments = async (req: Request, res: Response) => {
@@ -41,6 +42,8 @@ export const createPayment = async (req: Request, res: Response) => {
       notes
     );
 
+    broadcastEvent(req.businessId!, 'PAYMENT_CREATED', { paymentId: payment.id });
+    broadcastEvent(req.businessId!, 'METRICS_UPDATED');
     res.status(201).json({ success: true, data: payment });
   } catch (error: any) {
     if (error.name === 'ZodError') {

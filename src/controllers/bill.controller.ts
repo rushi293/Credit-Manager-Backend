@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import { broadcastEvent } from '../services/events.service';
 import { createCreditBillSchema, updateCreditBillSchema } from '../schemas';
 import { calculateBillFinances } from '../services/finance.service';
 
@@ -82,6 +83,8 @@ export const createBill = async (req: Request, res: Response) => {
       data: parsedData,
     });
 
+    broadcastEvent(req.businessId!, 'CREDIT_BILL_CREATED', { billId: bill.id });
+    broadcastEvent(req.businessId!, 'METRICS_UPDATED');
     res.status(201).json({ success: true, data: bill });
   } catch (error: any) {
     if (error.name === 'ZodError') {
@@ -305,6 +308,8 @@ export const deleteBill = async (req: Request, res: Response) => {
       });
     });
 
+    broadcastEvent(req.businessId!, 'CREDIT_BILL_DELETED', { billId: id });
+    broadcastEvent(req.businessId!, 'METRICS_UPDATED');
     res.json({ success: true, message: 'Bill deleted successfully' });
   } catch (error: any) {
     console.error('Delete bill error:', error);
