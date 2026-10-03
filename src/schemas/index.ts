@@ -45,8 +45,8 @@ export const createDailyBillSchema = z.object({
   customerId: z.string().uuid(),
   billNumber: z.string().min(1),
   billAmount: z.number().positive(),
-  status: z.enum(['PAID', 'UNPAID']),
-  paymentMethod: z.enum(['GPay', 'Cash']).optional().nullable(),
+  status: z.enum(['PAID', 'UNPAID', 'CREDIT_BILL']),
+  paymentMethod: z.string().optional().nullable(),
   billDate: z.string().datetime(),
 });
 

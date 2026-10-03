@@ -27,6 +27,7 @@ export const getMetricsByDateRange = async (req: Request, res: Response) => {
         by: ['billDate'],
         where: {
           businessId,
+          status: { not: 'CREDIT_BILL' },
           ...(query.date ? { billDate: query.date } : {})
         },
         _sum: { billAmount: true }
