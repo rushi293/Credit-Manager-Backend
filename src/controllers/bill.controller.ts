@@ -211,6 +211,9 @@ export const updateBill = async (req: Request, res: Response) => {
 
     const finances = calculateBillFinances(updatedBill.totalAmount, bill.payments, updatedBill.dueDate);
 
+    broadcastEvent(req.businessId!, 'CREDIT_BILL_UPDATED', { billId: id });
+    broadcastEvent(req.businessId!, 'METRICS_UPDATED');
+
     res.json({ 
       success: true, 
       data: {

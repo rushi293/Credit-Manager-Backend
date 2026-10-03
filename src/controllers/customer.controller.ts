@@ -121,6 +121,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
       data: { name, phone, alternatePhone, address, notes }
     });
 
+    broadcastEvent(req.businessId!, 'CUSTOMER_UPDATED', { customerId: updatedCustomer.id });
     res.json({ success: true, data: updatedCustomer });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -216,6 +217,8 @@ export const deleteCustomer = async (req: Request, res: Response) => {
       });
     });
 
+    broadcastEvent(businessId, 'CUSTOMER_DELETED', { customerId: id });
+    broadcastEvent(businessId, 'METRICS_UPDATED'); // Deleting customer might affect metrics (bills deleted)
     res.json({ success: true, message: 'Customer and all associated records deleted successfully.' });
   } catch (error: any) {
     console.error('Delete customer error:', error);

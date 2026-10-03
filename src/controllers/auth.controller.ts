@@ -59,6 +59,7 @@ export const register = async (req: Request, res: Response) => {
       { expiresIn: '18h' }
     );
 
+    broadcastEvent(result.business.id, 'USER_LOGIN', { userId: result.user.id, sessionId: session.id });
     res.status(201).json({
       success: true,
       data: {
@@ -106,6 +107,7 @@ export const login = async (req: Request, res: Response) => {
       { expiresIn: '18h' }
     );
 
+    broadcastEvent(user.businessId, 'USER_LOGIN', { userId: user.id, sessionId: session.id });
     res.json({
       success: true,
       data: {
@@ -233,5 +235,21 @@ export const updateCredentials = async (req: Request, res: Response) => {
     }
     console.error('Update credentials error:', error);
     res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const sessionId = req.sessionId;
+    if (sessionId) {
+      await prisma.loginSession.update({
+        where: { id: sessionId },
+        data: { isValid: false, revokedAt: new Date() }
+      });
+      broadcastEvent(req.businessId!, 'USER_LOGOUT', { sessionId });
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
