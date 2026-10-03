@@ -39,3 +39,17 @@ export const createPaymentSchema = z.object({
   paymentMethod: z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER']),
   notes: z.string().optional(),
 });
+
+// Daily Bill schemas
+export const createDailyBillSchema = z.object({
+  customerId: z.string().uuid(),
+  billNumber: z.string().min(1),
+  billAmount: z.number().positive(),
+  status: z.enum(['PAID', 'UNPAID']),
+  paymentMethod: z.enum(['GPay', 'Cash']).optional().nullable(),
+  billDate: z.string().datetime(),
+});
+
+export const updateDailyBillSchema = createDailyBillSchema.partial().extend({
+  billAmount: z.number().positive().optional(),
+});

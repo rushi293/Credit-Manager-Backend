@@ -9,6 +9,7 @@ import metricsRoutes from './metrics.routes';
 import settingsRoutes from './settings.routes';
 import adminRoutes from './admin.routes';
 import eventsRoutes from './events.routes';
+import dailyBillRoutes from './dailyBill.routes';
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/metrics', metricsRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/events', eventsRoutes);
+router.use('/daily-bills', dailyBillRoutes);
 
 export default router;

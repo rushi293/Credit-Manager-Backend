@@ -22,6 +22,8 @@ export const updateSettings = async (req: Request, res: Response) => {
       data
     });
 
+    broadcastEvent(businessId, 'SETTINGS_UPDATED');
+
     res.json({ success: true, data: updatedBusiness });
   } catch (error: any) {
     if (error instanceof z.ZodError) {

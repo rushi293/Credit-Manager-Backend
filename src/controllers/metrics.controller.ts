@@ -18,12 +18,56 @@ export const getMetricsByDateRange = async (req: Request, res: Response) => {
       query.date = new Date(String(startDate));
     }
 
-    const metrics = await prisma.dailyMetric.findMany({
-      where: query,
-      orderBy: { date: 'asc' }
+    const [metrics, dailyBills] = await Promise.all([
+      prisma.dailyMetric.findMany({
+        where: query,
+        orderBy: { date: 'asc' }
+      }),
+      prisma.dailyBill.groupBy({
+        by: ['billDate'],
+        where: {
+          businessId,
+          ...(query.date ? { billDate: query.date } : {})
+        },
+        _sum: { billAmount: true }
+      })
+    ]);
+
+    const dailyBillsMap = new Map();
+    dailyBills.forEach(db => {
+      const dStr = db.billDate.toISOString().split('T')[0];
+      dailyBillsMap.set(dStr, Number(db._sum.billAmount || 0));
     });
 
-    res.json({ success: true, data: metrics });
+    const enhancedMetrics = metrics.map(m => {
+      const dStr = m.date.toISOString().split('T')[0];
+      const dailyBillsSum = dailyBillsMap.get(dStr);
+      return {
+        ...m,
+        totalSales: dailyBillsSum !== undefined ? dailyBillsSum : m.totalSales
+      };
+    });
+
+    // Also inject synthetic metrics for dates that have DailyBills but no DailyMetric
+    dailyBills.forEach(db => {
+      const dStr = db.billDate.toISOString().split('T')[0];
+      if (!enhancedMetrics.find(m => m.date.toISOString().split('T')[0] === dStr)) {
+        enhancedMetrics.push({
+          id: 'synthetic-' + dStr,
+          businessId,
+          date: db.billDate,
+          totalSales: Number(db._sum.billAmount || 0),
+          totalExpense: 0,
+          totalIphoneSales: 0,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        } as any);
+      }
+    });
+
+    enhancedMetrics.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    res.json({ success: true, data: enhancedMetrics });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -32,11 +76,11 @@ export const getMetricsByDateRange = async (req: Request, res: Response) => {
 export const upsertMetric = async (req: Request, res: Response) => {
   try {
     const businessId = req.businessId!;
-    const { date, totalSales, totalExpense, totalIphoneSales } = req.body;
+    // Note: totalSales is extracted but intentionally ignored for saving, because it's computed dynamically from DailyBills
+    const { date, totalExpense, totalIphoneSales } = req.body;
 
     const parsedDate = new Date(date);
     
-    // Find if it exists
     let metric = await prisma.dailyMetric.findFirst({
       where: { businessId, date: parsedDate }
     });
@@ -45,7 +89,6 @@ export const upsertMetric = async (req: Request, res: Response) => {
       metric = await prisma.dailyMetric.update({
         where: { id: metric.id },
         data: {
-          totalSales: totalSales ?? metric.totalSales,
           totalExpense: totalExpense ?? metric.totalExpense,
           totalIphoneSales: totalIphoneSales ?? metric.totalIphoneSales
         }
@@ -55,7 +98,6 @@ export const upsertMetric = async (req: Request, res: Response) => {
         data: {
           businessId,
           date: parsedDate,
-          totalSales: totalSales ?? 0,
           totalExpense: totalExpense ?? 0,
           totalIphoneSales: totalIphoneSales ?? 0
         }

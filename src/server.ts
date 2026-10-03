@@ -14,6 +14,15 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
 
+// Disable caching for all API responses to ensure real-time updates work correctly
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
 // Root test API
 app.get('/', (req, res) => {
   res.status(200).json({ 
