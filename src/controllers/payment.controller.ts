@@ -3,16 +3,10 @@ import prisma from '../utils/db';
 import { broadcastEvent } from '../services/events.service';
 import { processPaymentSafely } from '../services/payment.service';
 
-import { getCache, setCache } from '../utils/cache';
-
 export const getPayments = async (req: Request, res: Response) => {
   try {
     const businessId = req.businessId!;
     const { customerId, creditBillId } = req.query;
-
-    const cacheKey = `${businessId}:payments:${customerId || 'any'}:${creditBillId || 'any'}`;
-    const cached = getCache(cacheKey);
-    if (cached) return res.json({ success: true, data: cached });
 
     const payments = await prisma.payment.findMany({
       where: { 
@@ -27,7 +21,6 @@ export const getPayments = async (req: Request, res: Response) => {
       }
     });
 
-    setCache(cacheKey, payments, 60000);
     res.json({ success: true, data: payments });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

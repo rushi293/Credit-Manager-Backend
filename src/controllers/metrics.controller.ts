@@ -1,18 +1,11 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
 import { broadcastEvent } from '../services/events.service';
-import { getCache, setCache } from '../utils/cache';
 
 export const getMetricsByDateRange = async (req: Request, res: Response) => {
   try {
     const businessId = req.businessId!;
     const { startDate, endDate } = req.query;
-
-    const cacheKey = `${businessId}:metrics:${startDate || 'any'}:${endDate || 'any'}`;
-    const cached = getCache(cacheKey);
-    if (cached) {
-      return res.json({ success: true, data: cached });
-    }
 
     const query: any = { businessId };
     
@@ -73,8 +66,6 @@ export const getMetricsByDateRange = async (req: Request, res: Response) => {
     });
 
     enhancedMetrics.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    setCache(cacheKey, enhancedMetrics, 60000); // 1-minute TTL
 
     res.json({ success: true, data: enhancedMetrics });
   } catch (error: any) {

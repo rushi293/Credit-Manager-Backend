@@ -1,5 +1,4 @@
 import { Response } from 'express';
-import { invalidateCacheByPrefix } from '../utils/cache';
 
 const clients = new Map<string, Response[]>();
 
@@ -24,10 +23,6 @@ export const removeClient = (businessId: string, res: Response) => {
 };
 
 export const broadcastEvent = (businessId: string, type: string, payload: any = {}) => {
-  // Invalidate any cached API responses for this business (dashboard, metrics, customers)
-  // so that subsequent fetches get fresh data.
-  invalidateCacheByPrefix(businessId);
-
   const businessClients = clients.get(businessId);
   if (businessClients) {
     const dataString = JSON.stringify({ type, ...payload });
