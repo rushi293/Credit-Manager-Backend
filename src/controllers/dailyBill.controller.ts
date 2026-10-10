@@ -47,9 +47,7 @@ export const createDailyBill = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Invalid customer' });
     }
 
-    if (parsedData.status === 'UNPAID' || parsedData.status === 'CREDIT_BILL') {
-      parsedData.paymentMethod = null;
-    } else if (parsedData.status === 'PAID' && !parsedData.paymentMethod) {
+    if (parsedData.status === 'PAID' && !parsedData.paymentMethod) {
       return res.status(400).json({ success: false, error: 'Payment method is required for paid bills' });
     }
 
@@ -127,9 +125,7 @@ export const updateDailyBill = async (req: Request, res: Response) => {
 
     const newStatus = parsedData.status || existingBill.status;
 
-    if (newStatus === 'UNPAID' || newStatus === 'CREDIT_BILL') {
-      parsedData.paymentMethod = null;
-    } else if (newStatus === 'PAID') {
+    if (newStatus === 'PAID') {
       const pMethod = parsedData.paymentMethod !== undefined ? parsedData.paymentMethod : existingBill.paymentMethod;
       if (!pMethod) {
         return res.status(400).json({ success: false, error: 'Payment method is required for paid bills' });
@@ -337,3 +333,4 @@ export const importDailyBills = async (req: Request, res: Response) => {
     res.status(400).json({ success: false, error: error.message });
   }
 };
+
