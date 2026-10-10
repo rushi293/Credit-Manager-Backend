@@ -53,3 +53,14 @@ export const createDailyBillSchema = z.object({
 export const updateDailyBillSchema = createDailyBillSchema.partial().extend({
   billAmount: z.number().positive().optional(),
 });
+
+export const importDailyBillsSchema = z.array(z.object({
+  billDate: z.string().datetime(),
+  billNumber: z.string().min(1),
+  billAmount: z.number().positive(),
+  customerId: z.string().optional(),
+  newCustomerName: z.string().optional()
+}).refine(data => data.customerId || data.newCustomerName, {
+  message: 'Either customerId or newCustomerName must be provided'
+}));
+

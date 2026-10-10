@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
 import { broadcastEvent } from '../services/events.service';
-import { createDailyBillSchema, updateDailyBillSchema } from '../schemas';
+import { createDailyBillSchema, updateDailyBillSchema, importDailyBillsSchema } from '../schemas';
 
 export const getDailyBills = async (req: Request, res: Response) => {
   try {
@@ -238,3 +238,88 @@ export const deleteDailyBill = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+export const importDailyBills = async (req: Request, res: Response) => {
+  try {
+    const businessId = req.businessId!;
+    const parsedData = importDailyBillsSchema.parse(req.body.bills);
+
+    if (parsedData.length === 0) {
+      return res.status(400).json({ success: false, error: 'No bills provided' });
+    }
+
+    const importedBills = await prisma.$transaction(async (tx) => {
+      const results = [];
+      for (const item of parsedData) {
+        let custId = item.customerId;
+
+        if (!custId && item.newCustomerName) {
+          // Check if customer already exists by exact name
+          const existing = await tx.customer.findFirst({
+            where: {
+              businessId,
+              name: {
+                equals: item.newCustomerName,
+                mode: 'insensitive'
+              }
+            }
+          });
+          if (existing) {
+            custId = existing.id;
+          } else {
+            // Create new customer
+            const newCust = await tx.customer.create({
+              data: {
+                businessId,
+                name: item.newCustomerName,
+                phone: null
+              }
+            });
+            custId = newCust.id;
+          }
+        }
+
+        if (!custId) throw new Error('Customer resolution failed');
+
+        // Check for duplicates: same business, billDate, billNumber, customerId
+        const duplicate = await tx.dailyBill.findFirst({
+          where: {
+            businessId,
+            billDate: new Date(item.billDate),
+            billNumber: item.billNumber,
+            customerId: custId
+          }
+        });
+
+        if (duplicate) {
+          throw new Error('Duplicate bill detected for this customer on this date');
+        }
+
+        const newBill = await tx.dailyBill.create({
+          data: {
+            businessId,
+            customerId: custId,
+            billNumber: item.billNumber,
+            billAmount: item.billAmount,
+            status: 'UNPAID',
+            paymentMethod: null,
+            billDate: new Date(item.billDate)
+          }
+        });
+        results.push(newBill);
+      }
+      return results;
+    });
+
+    broadcastEvent(businessId, 'DAILY_BILL_CREATED', { count: importedBills.length });
+    broadcastEvent(businessId, 'METRICS_UPDATED');
+    
+    res.status(201).json({ success: true, data: importedBills });
+  } catch (error: any) {
+    if (error.name === 'ZodError') {
+      return res.status(400).json({ success: false, error: 'Validation error', details: error.errors });
+    }
+    res.status(400).json({ success: false, error: error.message });
+  }
+};
+
