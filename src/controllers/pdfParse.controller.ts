@@ -1,44 +1,6 @@
 import { Request, Response } from 'express';
 import pdfParse from 'pdf-parse';
 
-// Custom pagerender to perfectly extract rows using Y coordinates, 
-// ensuring columns are ordered strictly by X coordinates left-to-right.
-const render_page = async function(pageData: any) {
-  const textContent = await pageData.getTextContent();
-  const rows: Record<number, any[]> = {};
-  
-  for (const item of textContent.items) {
-    if (!item.str || !item.str.trim()) continue;
-    const y = item.transform[5]; // vertical coordinate
-    
-    // Cluster Y coordinates within 4 pixels to group text on the same row
-    const yKeys = Object.keys(rows).map(Number);
-    const yCluster = yKeys.find(k => Math.abs(k - y) < 4);
-    
-    if (yCluster !== undefined) {
-      rows[yCluster].push(item);
-    } else {
-      rows[y] = [item];
-    }
-  }
-  
-  // PDF coordinates usually go bottom-to-top, so sort Y descending
-  const sortedYKeys = Object.keys(rows).map(Number).sort((a, b) => b - a);
-  let pageText = '';
-  
-  for (const y of sortedYKeys) {
-    const rowItems = rows[y];
-    // Sort items left-to-right
-    rowItems.sort((a, b) => a.transform[4] - b.transform[4]);
-    
-    // Join all column fragments with a single space
-    const rowString = rowItems.map(item => item.str.trim()).join(' ');
-    pageText += rowString + '\n';
-  }
-  
-  return pageText;
-};
-
 export const parseBillPdf = async (req: Request, res: Response) => {
   try {
     const file = req.file;
@@ -49,67 +11,72 @@ export const parseBillPdf = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'File must be a PDF' });
     }
 
-    // Extract text using X/Y grouping to guarantee correct row sequence
-    const data = await pdfParse(file.buffer, { pagerender: render_page });
-    const text = data.text;
+    // Rely on standard pdfParse text extraction
+    const data = await pdfParse(file.buffer);
+    
+    // Convert to a single line so we don't care about page breaks, wrapped headers, or disjointed text
+    const singleLineText = data.text.replace(/\n/g, ' ');
     
     const bills = [];
-    const lines = text.split('\n');
     
-    // Regex that handles spaces, commas, and grabs everything after the Retailer Name
-    const flexibleRegex = /^\s*([A-Za-z0-9_-]+)\s+(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(.+?)\s+([\d\.,\s-]+)$/;
+    // Global regex:
+    // 1. Bill Number (>= 6 alphanumeric characters)
+    // 2. Date (DD/MM/YYYY or DD-MM-YYYY)
+    // 3. Retailer Name (anything until we hit the amounts)
+    // 4. Amounts: exactly 9 or more consecutive decimal values (to capture Gross, Tax, Net, etc)
+    const globalRegex = /([A-Za-z0-9_-]{6,})\s+(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(.+?)\s+((?:-?[\d,]+\.\d{2}\s*){9,})/g;
+    
+    let match;
+    while ((match = globalRegex.exec(singleLineText)) !== null) {
+      let billNumber = match[1];
+      const billDateStr = match[2];
+      const retailerRaw = match[3];
+      const amountsRaw = match[4];
 
-    for (let line of lines) {
-      line = line.trim();
-      const match = line.match(flexibleRegex);
-      if (match) {
-        let billNumber = match[1];
-        const billDateStr = match[2];
-        const retailerRaw = match[3];
-        const amountsRaw = match[4];
-        
-        if (!/^[\d\.,\s-]+$/.test(amountsRaw)) continue;
+      // Ensure we don't accidentally capture header words in Retailer Name
+      if (retailerRaw.toLowerCase().includes('retailer name')) continue;
 
-        // Ensure we strictly enforce that this is a valid line and not a header
-        if (retailerRaw.toLowerCase().includes('retailer name')) continue;
-
-        const suffixMatch = billNumber.match(/(\d{4})$/);
-        let extractedNumber = billNumber;
-        if (suffixMatch) {
-          extractedNumber = suffixMatch[1];
-        } else {
-          const digits = billNumber.match(/(\d+)$/);
-          if (digits) {
-             extractedNumber = digits[1].padStart(4, '0');
-          }
+      // Extract last 4 digits of bill number safely
+      const suffixMatch = billNumber.match(/(\d{4})$/);
+      let extractedNumber = billNumber;
+      if (suffixMatch) {
+        extractedNumber = suffixMatch[1];
+      } else {
+        const digits = billNumber.match(/(\d+)$/);
+        if (digits) {
+           extractedNumber = digits[1].padStart(4, '0');
         }
+      }
 
-        const [day, month, year] = billDateStr.split(/[\/\-]/);
-        const parsedDate = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10)));
+      // Parse date DD/MM/YYYY strictly to UTC
+      const [day, month, year] = billDateStr.split(/[\/\-]/);
+      const parsedDate = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10)));
+      
+      if (isNaN(parsedDate.getTime())) continue;
+
+      // The Net Amount is the very last extracted numeric block
+      const amounts = amountsRaw.trim().split(/\s+/);
+      if (amounts.length >= 9) {
+        const netAmtStr = amounts[amounts.length - 1];
+        const netAmt = parseFloat(netAmtStr.replace(/,/g, ''));
         
-        if (isNaN(parsedDate.getTime())) continue;
-
-        const amounts = amountsRaw.trim().split(/\s+/);
-        if (amounts.length > 0) {
-          // The Net Amount is exactly the last column
-          const netAmtStr = amounts[amounts.length - 1];
-          const netAmt = parseFloat(netAmtStr.replace(/,/g, ''));
-          
-          if (!isNaN(netAmt)) {
-            bills.push({
-              billNumber: extractedNumber,
-              billDate: parsedDate.toISOString(),
-              retailerName: retailerRaw.trim(),
-              netAmount: netAmt,
-              originalLine: line
-            });
-          }
+        if (!isNaN(netAmt)) {
+          bills.push({
+            billNumber: extractedNumber,
+            billDate: parsedDate.toISOString(),
+            retailerName: retailerRaw.trim(),
+            netAmount: netAmt,
+            originalLine: match[0]
+          });
         }
       }
     }
 
-    if (bills.length === 0) console.log('DEBUG PDF TEXT:', text); 
-    res.json({ success: true, data: bills, _debug_total_lines: lines.length });
+    if (bills.length === 0) {
+       console.log('DEBUG PDF TEXT:', singleLineText);
+    }
+    
+    res.json({ success: true, data: bills, _debug_total_extracted: bills.length });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
