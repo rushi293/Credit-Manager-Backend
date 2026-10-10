@@ -18,15 +18,30 @@ export const getDashboardData = async (req: Request, res: Response) => {
 
     const [
       totalCustomers,
-      allBills,
+      metricsRaw,
       recentBills,
       recentPayments
     ] = await Promise.all([
       prisma.customer.count({ where: { businessId } }),
-      prisma.creditBill.findMany({
-        where: { businessId },
-        select: { totalAmount: true, dueDate: true, payments: { select: { amount: true } } }
-      }),
+      prisma.$queryRaw<any[]>`
+        WITH BillStats AS (
+          SELECT 
+            b.id,
+            b."totalAmount",
+            b."dueDate",
+            COALESCE(SUM(p.amount), 0) as "totalPaid"
+          FROM "CreditBill" b
+          LEFT JOIN "Payment" p ON p."creditBillId" = b.id
+          WHERE b."businessId" = ${businessId}
+          GROUP BY b.id, b."totalAmount", b."dueDate"
+        )
+        SELECT 
+          COALESCE(SUM("totalAmount" - "totalPaid"), 0) as "totalOutstandingCredit",
+          COUNT(CASE WHEN "totalPaid" = 0 AND "totalAmount" > 0 AND ("dueDate" IS NULL OR "dueDate" >= CURRENT_TIMESTAMP) THEN 1 END) as "unpaidBillsCount",
+          COUNT(CASE WHEN "totalPaid" > 0 AND "totalPaid" < "totalAmount" AND ("dueDate" IS NULL OR "dueDate" >= CURRENT_TIMESTAMP) THEN 1 END) as "partiallyPaidBillsCount",
+          SUM(CASE WHEN "totalAmount" > "totalPaid" AND "dueDate" < CURRENT_TIMESTAMP THEN "totalAmount" - "totalPaid" ELSE 0 END) as "overdueAmount"
+        FROM BillStats
+      `,
       prisma.creditBill.findMany({
         where: { businessId, isArchived: false, ...dateFilter },
         orderBy: { createdAt: 'desc' },
@@ -41,22 +56,10 @@ export const getDashboardData = async (req: Request, res: Response) => {
       })
     ]);
 
-    let totalOutstandingCredit = new Decimal(0);
-    let unpaidBillsCount = 0;
-    let partiallyPaidBillsCount = 0;
-    let overdueAmount = new Decimal(0);
-
-    allBills.forEach(bill => {
-      const { status, remainingAmount } = calculateBillFinances(bill.totalAmount, bill.payments as any, bill.dueDate);
-      
-      totalOutstandingCredit = totalOutstandingCredit.plus(remainingAmount);
-
-      if (status === BillStatus.UNPAID) unpaidBillsCount++;
-      if (status === BillStatus.PARTIALLY_PAID) partiallyPaidBillsCount++;
-      if (status === BillStatus.OVERDUE) {
-         overdueAmount = overdueAmount.plus(remainingAmount);
-      }
-    });
+    const totalOutstandingCredit = new Decimal(metricsRaw[0]?.totalOutstandingCredit || 0);
+    const unpaidBillsCount = Number(metricsRaw[0]?.unpaidBillsCount || 0);
+    const partiallyPaidBillsCount = Number(metricsRaw[0]?.partiallyPaidBillsCount || 0);
+    const overdueAmount = new Decimal(metricsRaw[0]?.overdueAmount || 0);
 
     const recentBillsWithFinances = recentBills.map(bill => {
       const { remainingAmount, status, totalPaid } = calculateBillFinances(

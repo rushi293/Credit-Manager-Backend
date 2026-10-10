@@ -14,9 +14,11 @@ export const getCustomers = async (req: Request, res: Response) => {
     const rawCustomers: any[] = await prisma.$queryRaw`
       SELECT 
         c.id, c.name, c.phone, c."alternatePhone", c.address, c.notes, c."createdAt",
-        COALESCE((SELECT SUM("totalAmount") FROM "CreditBill" WHERE "customerId" = c.id AND "businessId" = c."businessId"), 0) as "totalCredit",
-        COALESCE((SELECT SUM("amount") FROM "Payment" WHERE "customerId" = c.id AND "businessId" = c."businessId"), 0) as "totalPaid"
+        COALESCE(b.total, 0) as "totalCredit",
+        COALESCE(p.total, 0) as "totalPaid"
       FROM "Customer" c
+      LEFT JOIN LATERAL (SELECT SUM("totalAmount") as total FROM "CreditBill" WHERE "customerId" = c.id) b ON true
+      LEFT JOIN LATERAL (SELECT SUM("amount") as total FROM "Payment" WHERE "customerId" = c.id) p ON true
       WHERE c."businessId" = ${businessId}
       ORDER BY c."createdAt" DESC
     `;
