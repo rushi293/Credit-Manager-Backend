@@ -21,20 +21,19 @@ export const getMetricsByDateRange = async (req: Request, res: Response) => {
       };
     }
 
-    const [metrics, dailyBills] = await Promise.all([
-      prisma.dailyMetric.findMany({
-        where: query,
-        orderBy: { date: 'asc' }
-      }),
-      prisma.dailyBill.groupBy({
-        by: ['billDate'],
-        where: {
-          businessId,
-          ...(query.date ? { billDate: query.date } : {})
-        },
-        _sum: { billAmount: true }
-      })
-    ]);
+    const metrics = await prisma.dailyMetric.findMany({
+      where: query,
+      orderBy: { date: 'asc' }
+    });
+    
+    const dailyBills = await prisma.dailyBill.groupBy({
+      by: ['billDate'],
+      where: {
+        businessId,
+        ...(query.date ? { billDate: query.date } : {})
+      },
+      _sum: { billAmount: true }
+    });
 
     const dailyBillsMap = new Map();
     dailyBills.forEach(db => {

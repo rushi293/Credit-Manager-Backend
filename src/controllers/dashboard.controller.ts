@@ -16,45 +16,43 @@ export const getDashboardData = async (req: Request, res: Response) => {
       }
     } : {};
 
-    const [
-      totalCustomers,
-      metricsRaw,
-      recentBills,
-      recentPayments
-    ] = await Promise.all([
-      prisma.customer.count({ where: { businessId } }),
-      prisma.$queryRaw<any[]>`
-        WITH BillStats AS (
-          SELECT 
-            b.id,
-            b."totalAmount",
-            b."dueDate",
-            COALESCE(SUM(p.amount), 0) as "totalPaid"
-          FROM "CreditBill" b
-          LEFT JOIN "Payment" p ON p."creditBillId" = b.id
-          WHERE b."businessId" = ${businessId}
-          GROUP BY b.id, b."totalAmount", b."dueDate"
-        )
+    // Run sequentially instead of Promise.all to prevent Neon Postgres connection pool exhaustion.
+    // In serverless environments, Promise.all triggers massive connection storms that cause 4s+ delays.
+    const totalCustomers = await prisma.customer.count({ where: { businessId } });
+    
+    const metricsRaw = await prisma.$queryRaw<any[]>`
+      WITH BillStats AS (
         SELECT 
-          COALESCE(SUM("totalAmount" - "totalPaid"), 0) as "totalOutstandingCredit",
-          COUNT(CASE WHEN "totalPaid" = 0 AND "totalAmount" > 0 AND ("dueDate" IS NULL OR "dueDate" >= CURRENT_TIMESTAMP) THEN 1 END) as "unpaidBillsCount",
-          COUNT(CASE WHEN "totalPaid" > 0 AND "totalPaid" < "totalAmount" AND ("dueDate" IS NULL OR "dueDate" >= CURRENT_TIMESTAMP) THEN 1 END) as "partiallyPaidBillsCount",
-          SUM(CASE WHEN "totalAmount" > "totalPaid" AND "dueDate" < CURRENT_TIMESTAMP THEN "totalAmount" - "totalPaid" ELSE 0 END) as "overdueAmount"
-        FROM BillStats
-      `,
-      prisma.creditBill.findMany({
-        where: { businessId, isArchived: false, ...dateFilter },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-        include: { customer: { select: { name: true } }, payments: { select: { amount: true } } }
-      }),
-      prisma.payment.findMany({
-        where: { businessId },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        include: { customer: { select: { name: true } } }
-      })
-    ]);
+          b.id,
+          b."totalAmount",
+          b."dueDate",
+          COALESCE(SUM(p.amount), 0) as "totalPaid"
+        FROM "CreditBill" b
+        LEFT JOIN "Payment" p ON p."creditBillId" = b.id
+        WHERE b."businessId" = ${businessId}
+        GROUP BY b.id, b."totalAmount", b."dueDate"
+      )
+      SELECT 
+        COALESCE(SUM("totalAmount" - "totalPaid"), 0) as "totalOutstandingCredit",
+        COUNT(CASE WHEN "totalPaid" = 0 AND "totalAmount" > 0 AND ("dueDate" IS NULL OR "dueDate" >= CURRENT_TIMESTAMP) THEN 1 END) as "unpaidBillsCount",
+        COUNT(CASE WHEN "totalPaid" > 0 AND "totalPaid" < "totalAmount" AND ("dueDate" IS NULL OR "dueDate" >= CURRENT_TIMESTAMP) THEN 1 END) as "partiallyPaidBillsCount",
+        SUM(CASE WHEN "totalAmount" > "totalPaid" AND "dueDate" < CURRENT_TIMESTAMP THEN "totalAmount" - "totalPaid" ELSE 0 END) as "overdueAmount"
+      FROM BillStats
+    `;
+
+    const recentBills = await prisma.creditBill.findMany({
+      where: { businessId, isArchived: false, ...dateFilter },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { customer: { select: { name: true } }, payments: { select: { amount: true } } }
+    });
+
+    const recentPayments = await prisma.payment.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: { customer: { select: { name: true } } }
+    });
 
     const totalOutstandingCredit = new Decimal(metricsRaw[0]?.totalOutstandingCredit || 0);
     const unpaidBillsCount = Number(metricsRaw[0]?.unpaidBillsCount || 0);
