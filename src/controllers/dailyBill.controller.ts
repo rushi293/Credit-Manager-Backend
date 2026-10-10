@@ -309,7 +309,7 @@ export const importDailyBills = async (req: Request, res: Response) => {
         results.push(newBill);
       }
       return results;
-    });
+    }, { maxWait: 15000, timeout: 60000 });
 
     broadcastEvent(businessId, 'DAILY_BILL_CREATED', { count: importedBills.length });
     broadcastEvent(businessId, 'METRICS_UPDATED');
@@ -322,4 +322,6 @@ export const importDailyBills = async (req: Request, res: Response) => {
     res.status(400).json({ success: false, error: error.message });
   }
 };
+
+
 
