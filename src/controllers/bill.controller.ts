@@ -4,10 +4,16 @@ import { broadcastEvent } from '../services/events.service';
 import { createCreditBillSchema, updateCreditBillSchema } from '../schemas';
 import { calculateBillFinances } from '../services/finance.service';
 
+import { getCache, setCache } from '../utils/cache';
+
 export const getBills = async (req: Request, res: Response) => {
   try {
     const businessId = req.businessId!;
     const { customerId, archived, date, status } = req.query;
+
+    const cacheKey = `${businessId}:bills:${customerId || 'any'}:${archived || 'any'}:${date || 'any'}:${status || 'any'}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json({ success: true, data: cached });
 
     let isArchivedCondition: boolean | undefined;
     if (archived === 'true') {
@@ -55,6 +61,7 @@ export const getBills = async (req: Request, res: Response) => {
       billsWithFinances = billsWithFinances.filter(b => b.status === String(status));
     }
 
+    setCache(cacheKey, billsWithFinances, 60000);
     res.json({ success: true, data: billsWithFinances });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

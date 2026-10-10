@@ -8,9 +8,17 @@ import { calculateCustomerBalance } from '../services/finance.service';
 import { Decimal } from '@prisma/client/runtime/library';
 import cloudinary from '../utils/cloudinary';
 
+import { getCache, setCache } from '../utils/cache';
+
 export const getCustomers = async (req: Request, res: Response) => {
   try {
     const businessId = req.businessId!;
+    const cacheKey = `${businessId}:customers`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
     const rawCustomers: any[] = await prisma.$queryRaw`
       SELECT 
         c.id, c.name, c.phone, c."alternatePhone", c.address, c.notes, c."createdAt",
@@ -34,6 +42,8 @@ export const getCustomers = async (req: Request, res: Response) => {
         outstandingBalance
       };
     });
+
+    setCache(cacheKey, customersWithBalances, 60000); // 1 minute TTL
 
     res.json({ success: true, data: customersWithBalances });
   } catch (error: any) {
