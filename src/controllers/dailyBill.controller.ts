@@ -248,68 +248,83 @@ export const importDailyBills = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'No bills provided' });
     }
 
-    const importedBills = await prisma.$transaction(async (tx) => {
-      const results = [];
-      for (const item of parsedData) {
-        let custId = item.customerId;
-
-        if (!custId && item.newCustomerName) {
-          // Check if customer already exists by exact name
-          const existing = await tx.customer.findFirst({
-            where: {
-              businessId,
-              name: {
-                equals: item.newCustomerName,
-                mode: 'insensitive'
-              }
-            }
-          });
-          if (existing) {
-            custId = existing.id;
-          } else {
-            // Create new customer
-            const newCust = await tx.customer.create({
-              data: {
-                businessId,
-                name: item.newCustomerName,
-                phone: null
-              }
-            });
-            custId = newCust.id;
-          }
-        }
-
-        if (!custId) throw new Error('Customer resolution failed');
-
-        // Check for duplicates: same business, billDate, billNumber, customerId
-        const duplicate = await tx.dailyBill.findFirst({
-          where: {
-            businessId,
-            billDate: new Date(item.billDate),
-            billNumber: item.billNumber,
-            customerId: custId
-          }
-        });
-
-        if (duplicate) {
-          throw new Error('Duplicate bill detected for this customer on this date');
-        }
-
-        const newBill = await tx.dailyBill.create({
-          data: {
-            businessId,
-            customerId: custId,
-            billNumber: item.billNumber,
-            billAmount: item.billAmount,
-            status: 'UNPAID',
-            paymentMethod: null,
-            billDate: new Date(item.billDate)
-          }
-        });
-        results.push(newBill);
+    // 1. Resolve all customers outside of the transaction block to avoid transaction timeout
+    const resolvedCustomers: Record<number, string> = {}; 
+    const newCustomerNames = new Set<string>();
+    
+    parsedData.forEach(item => {
+      if (!item.customerId && item.newCustomerName) {
+        newCustomerNames.add(item.newCustomerName.trim());
       }
-      return results;
-    }, { maxWait: 15000, timeout: 60000 });
+    });
+
+    const nameToIdMap: Record<string, string> = {};
+    
+    for (const name of Array.from(newCustomerNames)) {
+      let existing = await prisma.customer.findFirst({
+        where: { businessId, name: { equals: name, mode: 'insensitive' } }
+      });
+      
+      if (existing) {
+        nameToIdMap[name] = existing.id;
+      } else {
+        const newCust = await prisma.customer.create({
+          data: { businessId, name, phone: null }
+        });
+        nameToIdMap[name] = newCust.id;
+      }
+    }
+
+    parsedData.forEach((item, index) => {
+      if (item.customerId) {
+        resolvedCustomers[index] = item.customerId;
+      } else if (item.newCustomerName) {
+        resolvedCustomers[index] = nameToIdMap[item.newCustomerName.trim()];
+      }
+    });
+
+    // 2. Bulk check for duplicates
+    const uniqueDates = Array.from(new Set(parsedData.map(d => new Date(d.billDate).toISOString())));
+    
+    const existingBills = await prisma.dailyBill.findMany({
+      where: {
+        businessId,
+        billDate: { in: uniqueDates.map(d => new Date(d)) }
+      },
+      select: { billDate: true, billNumber: true, customerId: true }
+    });
+
+    const existingBillSet = new Set(
+      existingBills.map(b => b.billDate.toISOString() + '|' + b.billNumber + '|' + b.customerId)
+    );
+
+    for (let i = 0; i < parsedData.length; i++) {
+      const item = parsedData[i];
+      const custId = resolvedCustomers[i];
+      if (!custId) throw new Error('Customer resolution failed');
+      
+      const key = new Date(item.billDate).toISOString() + '|' + item.billNumber + '|' + custId;
+      if (existingBillSet.has(key)) {
+        throw new Error('Duplicate bill detected: ' + item.billNumber + ' for this customer on this date');
+      }
+    }
+
+    // 3. Perform a lightning-fast bulk creation transaction
+    const createPromises = parsedData.map((item, index) => {
+      return prisma.dailyBill.create({
+        data: {
+          businessId,
+          customerId: resolvedCustomers[index],
+          billNumber: item.billNumber,
+          billAmount: item.billAmount,
+          status: 'UNPAID',
+          paymentMethod: null,
+          billDate: new Date(item.billDate)
+        }
+      });
+    });
+
+    const importedBills = await prisma.$transaction(createPromises);
 
     broadcastEvent(businessId, 'DAILY_BILL_CREATED', { count: importedBills.length });
     broadcastEvent(businessId, 'METRICS_UPDATED');
@@ -322,6 +337,3 @@ export const importDailyBills = async (req: Request, res: Response) => {
     res.status(400).json({ success: false, error: error.message });
   }
 };
-
-
-
