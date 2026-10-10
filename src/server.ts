@@ -10,7 +10,39 @@ dotenv.config();
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+
+// Configure CORS to cache preflight requests for 2 hours (7200s).
+// This eliminates the repeated 271-755ms OPTIONS round-trips seen in the browser Network panel.
+// Each unique method+header combination is cached per-origin; subsequent API requests skip preflight.
+const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:5174'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // In production the deployed frontend origin must be in CORS_ALLOWED_ORIGINS
+    return callback(null, true); // permissive fallback — tighten by removing this line in production
+  },
+  credentials: true,
+  maxAge: 7200, // Browser caches the preflight response for 2 hours
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
+}));
+
+// Handle OPTIONS preflight early — before heavy middleware runs
+app.options('*', cors({
+  origin: true,
+  credentials: true,
+  maxAge: 7200,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
+}));
+
 app.use(helmet());
 app.use(morgan('dev'));
 
