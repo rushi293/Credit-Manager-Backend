@@ -57,17 +57,29 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     }
 
     if (decoded.sessionId) {
-      const session = await prisma.loginSession.findUnique({
-        where: { id: decoded.sessionId }
-      });
-      if (!session || !session.isValid || session.revokedAt) {
+      let sessionValid = true;
+      const cachedSessionKey = `session_${decoded.sessionId}`;
+      const cachedSession = getCachedUser(cachedSessionKey);
+      
+      if (!cachedSession) {
+        const session = await prisma.loginSession.findUnique({
+          where: { id: decoded.sessionId }
+        });
+        if (!session || !session.isValid || session.revokedAt) {
+          sessionValid = false;
+        } else {
+          setCachedUser(cachedSessionKey, { valid: true });
+        }
+      }
+
+      if (!sessionValid) {
         return res.status(401).json({ success: false, error: 'Unauthorized: Session revoked' });
       }
       
       // Update lastActivityAt occasionally (e.g. random 10% chance to reduce DB writes)
       if (Math.random() < 0.1) {
         await prisma.loginSession.update({
-          where: { id: session.id },
+          where: { id: decoded.sessionId },
           data: { lastActivityAt: new Date() }
         }).catch(() => {});
       }

@@ -11,11 +11,14 @@ export const getMetricsByDateRange = async (req: Request, res: Response) => {
     
     if (startDate && endDate) {
       query.date = {
-        gte: new Date(String(startDate)),
-        lte: new Date(String(endDate))
+        gte: new Date(new Date(String(startDate)).setHours(0, 0, 0, 0)),
+        lte: new Date(new Date(String(endDate)).setHours(23, 59, 59, 999))
       };
     } else if (startDate) {
-      query.date = new Date(String(startDate));
+      query.date = {
+        gte: new Date(new Date(String(startDate)).setHours(0, 0, 0, 0)),
+        lte: new Date(new Date(String(startDate)).setHours(23, 59, 59, 999))
+      };
     }
 
     const [metrics, dailyBills] = await Promise.all([

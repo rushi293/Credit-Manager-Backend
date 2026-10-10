@@ -48,6 +48,13 @@ app.use(morgan('dev'));
 
 // Disable caching for all API responses to ensure real-time updates work correctly
 app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const existingTiming = res.getHeader('Server-Timing');
+    const newTiming = `app;dur=${duration}`;
+    res.setHeader('Server-Timing', existingTiming ? `${existingTiming}, ${newTiming}` : newTiming);
+  });
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
