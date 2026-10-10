@@ -23,7 +23,7 @@ export const parseBillPdf = async (req: Request, res: Response) => {
     // then Retailer Name (which can have spaces),
     // then a series of decimal numbers.
     // To cleanly capture Retailer Name, we match everything up to the first space-separated number.
-    const flexibleRegex = /^([A-Za-z0-9_-]+)\s+(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([\d\.\s-]+)$/;
+    const flexibleRegex = /^\s*([A-Za-z0-9_-]+)\s+(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(.+?)\s+([\d\.,\s-]+)$/;
 
     for (let line of lines) {
       line = line.trim();
@@ -35,7 +35,7 @@ export const parseBillPdf = async (req: Request, res: Response) => {
         const amountsRaw = match[4];
         
         // Ensure the last part really looks like a bunch of numbers
-        if (!/^[\d\.\s-]+$/.test(amountsRaw)) continue;
+        if (!/^[\d\.,\s-]+$/.test(amountsRaw)) continue;
 
         // Extract last 4 digits of bill number while preserving leading zeros
         // Example: AMUL2610577 -> 0577
@@ -61,7 +61,7 @@ export const parseBillPdf = async (req: Request, res: Response) => {
         const amounts = amountsRaw.trim().split(/\s+/);
         if (amounts.length > 0) {
           const netAmtStr = amounts[amounts.length - 1];
-          const netAmt = parseFloat(netAmtStr);
+          const netAmt = parseFloat(netAmtStr.replace(/,/g, ''));
           
           if (!isNaN(netAmt)) {
             bills.push({
@@ -76,8 +76,10 @@ export const parseBillPdf = async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ success: true, data: bills });
+    if (bills.length === 0) console.log('DEBUG PDF TEXT:', text); res.json({ success: true, data: bills });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+
